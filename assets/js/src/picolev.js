@@ -6,8 +6,15 @@
  * Licensed under the GPLv2+ license.
  */
  
-( function( window, undefined ) {
-	'use strict';
+// ( function( window, undefined ) {
+// 	'use strict';
+	
+	jQuery(document).ready(function( $ ) {
+		jQuery.timeago.settings.allowFuture = true;
+		
+		jQuery("abbr.timeago").timeago();
 
 
-} )( this );
+	});
+
+// } )( this );
