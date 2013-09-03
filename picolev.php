@@ -44,6 +44,10 @@ class Picolev
 		add_action( 'init', array( 'Picolev', 'init' ) );
 		add_action( 'wp_enqueue_scripts', array( 'Picolev', 'enqueue_scripts_and_styles' ) );
 		add_action( 'bp_before_directory_activity_content', array( 'Picolev', 'do_picolev_mission_shortcode' ) );
+		// add_action( 'bp_activity_entry_meta', array( 'Picolev', 'add_fb_like_button' ) );
+		add_action( 'wp_head', array( 'Picolev', 'add_open_graph_tags' ) );
+
+		
 
 		add_filter( 'bp_activity_allowed_tags', array( 'Picolev', 'whitelist_tags_in_activity_action' ) );
 		add_filter( 'map_meta_cap', array( 'Picolev', 'map_meta_cap' ), 10, 4 );
@@ -189,6 +193,9 @@ class Picolev
 				if( 'POST' == $_SERVER['REQUEST_METHOD'] && ! empty( $_POST['action'] ) && 'mission_accomplished' == $_POST['action'] && ! empty( $_POST['mission_id'] ) ) {
 					Picolev::complete_mission();
 					return Picolev::output_mission_form();
+				} elseif ( 'POST' == $_SERVER['REQUEST_METHOD'] && ! empty( $_POST['action'] ) && 'mission_aborted' == $_POST['action'] && ! empty( $_POST['mission_id'] ) ) {
+					Picolev::abort_mission();
+					return Picolev::output_mission_form();
 				} else {
 					return Picolev::show_current_mission();
 				}
@@ -205,19 +212,21 @@ class Picolev
 
 	function output_mission_form() {
 		$out = '<div class="picolev-mission new" id="postbox">' . "\r\n";
+		$out .= '<div class="wrapper">' . "\r\n";
 		$out .= '<form id="new_mission" name="new_mission" method="post" action="">' . "\r\n";
 
-		$out .= '<p><label for="title">Mission:</label>' . "\r\n";
-		$out .= '<input type="text" id="title" value="" tabindex="1000" size="20" name="title" />' . "\r\n";
+		$out .= "<h2>Let's go!</h2>\r\n";
+		$out .= '<p><label for="title">What\'s your next mission?</label>' . "\r\n";
+		$out .= '<input type="text" id="title" value="" tabindex="1000" name="title" />' . "\r\n";
 		$out .= '</p>' . "\r\n";
 
-		$out .= '<p><label for="predicted_time">How many minutes it will take you:</label>' . "\r\n";
-		$out .= '<input type="text" id="predicted_time" value="" tabindex="1001" size="20" name="predicted_time" />' . "\r\n";
+		$out .= '<p><label for="predicted_time">How many minutes will it take you?</label>' . "\r\n";
+		$out .= '<input type="text" id="predicted_time" value="" tabindex="1001" name="predicted_time" />' . "\r\n";
 		$out .= '</p>' . "\r\n";
 
-		$out .= '<input type="submit" value="Go!" tabindex="1002">' . "\r\n";
+		$out .= '<p><input type="submit" value="Go!" tabindex="1002"></p>' . "\r\n";
 		$out .= '<input type="hidden" name="action" value="new_mission">' . "\r\n";
-		$out .= '</form></div>';
+		$out .= '</form></div></div>';
 		return $out;
 	}
 
@@ -265,14 +274,24 @@ class Picolev
 			// Add default completion value: not completed! There will be time enough for that later. ;)
 			update_post_meta( $post_id, 'completed', '0' );	
 
+
+			// Add to the activity stream
 			$activity_id = bp_activity_add( array(
 				'action' => $current_user->data->display_name . __( ' accepted a mission', 'picolev' ),
 				'content' => '<div class="mission-name">' . __( 'The mission: ', 'picolev' ) . $title . '</div><div class="mission-predicted-finish-time">The deadline: <abbr class="timeago" title="' . date( 'c', $predicted_finish_time ) . '">' . date( 'g:i A T', $predicted_finish_time ) . '</abbr></div>',
-				/* the component argument will be set to our component's identifier */
 				'component' => 'picolev_mission',
-				/* the type argument will be set to our component's type */
 				'type' => 'picolev_mission_update',
 			) );
+
+			// Connect the activity ID to the mission
+			update_post_meta( $post_id, 'activity_id', $activity_id );
+
+			// If this is the first mission of the day, give 'em some points for playing
+			$beginning_of_today = strtotime( date( 'Y-m-d' ) . ' 00:00:00' );
+			$most_recent_points = get_user_meta( $current_user->ID, 'picolev_points_modified', true );
+			if ( empty( $most_recent_points ) OR ( $most_recent_points < $beginning_of_today ) ) {
+				Picolev::add_points( 5 );
+			}
 
 			header( 'location: ' . esc_url( $_SERVER['REQUEST_URI'] ) );
 
@@ -284,31 +303,57 @@ class Picolev
 
 	function complete_mission() {
 		global $current_user;
-		if ( $post_id = intval( $_POST['mission_id'], 10 )  && 0 != $current_user->ID ) {
+		if ( ! empty( $_POST['mission_id'] ) && 0 != $current_user->ID ) {
+			$mission_id = intval( $_POST['mission_id'], 10 );
 
-			update_post_meta( $post_id, 'completed', time() );
-			$predicted_finish_time = get_post_meta( $post_id, 'predicted_time', true );
+			$points_earned = 10; // These are just for accomplishing a mission, period
+			$current_streak = get_user_meta( $current_user->ID, 'picolev_streak', true );
+
+			update_post_meta( $mission_id, 'completed', time() );
+			$predicted_finish_time = get_post_meta( $mission_id, 'predicted_time', true );
 			$time_to_spare = '';
 			$seconds_to_spare = $predicted_finish_time - time();
 			if ( $seconds_to_spare > 60 ) {
-				$time_to_spare = 'Completed with ' . round( $seconds_to_spare / 60 ) . ' minutes to spare.';
+				$time_to_spare = ' with ' . round( $seconds_to_spare / 60 ) . ' minutes to spare';
 			} elseif ( $seconds_to_spare > 0 ) {
 				// Really just squeaked by!
-				$time_to_spare = 'Completed with ' . $seconds_to_spare . ' seconds to spare!';
+				$time_to_spare = ' with ' . $seconds_to_spare . ' seconds to spare (!)';
 			}
 
 			if ( ! empty( $time_to_spare ) ) {
-				$time_to_spare = '<div class="mission-spare-time">' . $time_to_spare . '</div>';
+				$time_to_spare = '<span class="mission-spare-time">' . $time_to_spare . '</span>';
+
+				// Update mission stats
+				$missions_completed_before_deadline = ( $tempvar = get_user_meta( $current_user->ID, 'picolev_missions_completed_before_deadline', true ) ) ? $tempvar : 0;
+				$missions_completed_before_deadline++;
+				update_user_meta( $current_user->ID, 'picolev_missions_completed_before_deadline', $missions_completed_before_deadline );
+
+				// Add bonus points!
+				if ( ! empty( $current_streak ) ) {
+					$points_earned += $current_streak;
+					$current_streak++;
+				} else {
+					// We're starting a new streak. Woot!
+					$current_streak = 1;
+				}
 			}
 
+			$mission_activity_id = Picolev::get_activity_id_for_mission( $mission_id );
+
 			$activity_id = bp_activity_add( array(
-				'action' => $current_user->data->display_name . __( ' accomplished a mission', 'picolev' ),
-				'content' => '<div class="mission-name">' . __( 'The mission: ', 'picolev' ) . get_the_title( $post_id ) . '</div>' . $time_to_spare,
-				/* the component argument will be set to our component's identifier */
+				'action' => $current_user->data->display_name . ' accomplished <a href="' . bp_activity_get_permalink( $mission_activity_id ) . '">a mission</a>' . $time_to_spare,
+				'content' => '',
 				'component' => 'picolev_mission',
-				/* the type argument will be set to our component's type */
-				'type' => 'picolev_mission_update',
+				'type' => 'picolev_mission_update_success',
 			) );
+
+			Picolev::add_points( $points_earned );
+			update_user_meta( $current_user->ID, 'picolev_streak', $current_streak );
+
+			// Update mission stats
+			$missions_completed = ( $tempvar = get_user_meta( $current_user->ID, 'picolev_missions_completed', true ) ) ? $tempvar : 0;
+			$missions_completed++;
+			update_user_meta( $current_user->ID, 'picolev_missions_completed', $missions_completed );
 
 			header( 'location: ' . esc_url( $_SERVER['REQUEST_URI'] ) );
 		}
@@ -325,15 +370,51 @@ class Picolev
 			$predicted_finish_time = get_post_meta( $active_mission[0]->ID, 'predicted_time', true );
 
 			$out = '<div class="picolev-mission current">' . "\r\n";
-			$out .= '<div class="mission-name">' . $active_mission[0]->post_title . '</div>' . "\r\n";
+			$out .= '<div class="wrapper">' . "\r\n";
+			$out .= '<h6>Your Current Mission</h6>';
+			$out .= '<h1 class="mission-name">' . $active_mission[0]->post_title . '</h1>' . "\r\n";
 			$out .= '<div class="mission-start-time">Started: <abbr class="timeago" title="' . date( 'c', $start_time ) . '">' . date( 'g:i A T', $start_time ) . '</abbr></div>' . "\r\n";
 			$out .= '<div class="mission-predicted-finish-time">Deadline: <abbr class="timeago" title="' . date( 'c', $predicted_finish_time ) . '">' . date( 'g:i A T', $predicted_finish_time ) . '</abbr></div>' . "\r\n";
 			$out .= '<form id="mission_accomplished" name="mission_accomplished" method="post" action="">' . "\r\n";
-			$out .= '<input type="submit" value="Mission Accomplished!">' . "\r\n";
+			$out .= '<input type="submit" value="Mark mission accomplished!">' . "\r\n";
 			$out .= '<input type="hidden" name="action" value="mission_accomplished">' . "\r\n";
 			$out .= '<input type="hidden" name="mission_id" value="' . $active_mission[0]->ID . '">' . "\r\n";
-			$out .= '</form></div>' . "\r\n";
+			$out .= '</form>' . "\r\n";
+			$out .= '<form id="mission_aborted" name="mission_aborted" method="post" action="">' . "\r\n";
+			$out .= '<input type="submit" value="...or abort mission and break your streak :(">' . "\r\n";
+			$out .= '<input type="hidden" name="action" value="mission_aborted">' . "\r\n";
+			$out .= '<input type="hidden" name="mission_id" value="' . $active_mission[0]->ID . '">' . "\r\n";
+			$out .= '</form>' . "\r\n";
+			$out .= '</div></div>' . "\r\n";
 			return $out;
+		}
+	}
+
+	function abort_mission() {
+		global $current_user;
+		if ( ! empty( $_POST['mission_id'] ) && 0 != $current_user->ID ) {
+			$mission_id = intval( $_POST['mission_id'], 10 );
+
+			// Update the mission
+			update_post_meta( $mission_id, 'completed', -1 );
+		
+			// Update mission stats
+			$missions_aborted = ( $tempvar = get_user_meta( $current_user->ID, 'picolev_missions_aborted', true ) ) ? $tempvar : 0;
+			$missions_aborted++;
+			update_user_meta( $current_user->ID, 'picolev_missions_aborted', $missions_aborted );
+
+			// Reset the streak
+			update_user_meta( $current_user->ID, 'picolev_streak', 0 );
+
+			$mission_activity_id = Picolev::get_activity_id_for_mission( $mission_id );
+
+			// Update the activity stream
+			$activity_id = bp_activity_add( array(
+				'action' => $current_user->data->display_name . ' aborted <a href="' . bp_activity_get_permalink( $mission_activity_id ) . '">a mission</a>',
+				'content' => '',
+				'component' => 'picolev_mission',
+				'type' => 'picolev_mission_update_failure',
+			) );
 		}
 	}
 
@@ -353,8 +434,40 @@ class Picolev
 		}
 	}
 
+	function add_points( $points ) {
+		global $current_user;
+
+		$user_id = $current_user->ID;
+		$meta_name = 'picolev_points';
+
+		// Add to existing points, if they're set
+		if ( $current_points = get_user_meta($user_id, $meta_name, true ) ) {
+			$points += $current_points;
+		}
+
+		update_user_meta( $user_id, $meta_name, $points );
+		update_user_meta( $user_id, 'picolev_points_modified', time() );
+	}
+
+	function get_activity_id_for_mission( $mission_id ) {
+		return get_post_meta( $mission_id, 'activity_id', true );
+	}
+
 	function do_picolev_mission_shortcode() {
 		echo do_shortcode( '[picolev-mission]' );
+	}
+
+	function add_open_graph_tags() {
+		global $wp_query;
+
+		echo '<meta property="og:url" content="' . home_url( $wp_query->query['pagename'] . $wp_query->query['page'] ) . '" />';
+		// log_it( 'query',  );
+
+		// <meta property="og:url" content="" />
+	}
+
+	function add_fb_like_button() {
+		echo '<div class="fb-like" data-href="' . bp_get_activity_thread_permalink() . '" data-width="300" data-show-faces="false" data-send="false"></div>';
 	}
 
 	function whitelist_tags_in_activity_action( $allowedtags ) {
