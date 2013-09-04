@@ -473,6 +473,21 @@ class Picolev
 		return get_post_meta( $mission_id, 'activity_id', true );
 	}
 
+	function get_mission_for_activity( $activity_id ) {
+		$missions = get_posts( array(
+			'numberposts'		=>	1,
+			'meta_key'			=>	'activity_id',
+			'meta_value'		=>	$activity_id,
+			'post_type'			=>	PICOLEV_SLUG )
+		);
+
+		if ( ! empty( $missions[0] ) ) {
+			return $missions[0];
+		} else {
+			return false;
+		}
+	}
+
 	function get_points( $user_id = null ) {
 		if ( empty( $user_id ) ) {
 			global $current_user;
@@ -536,7 +551,6 @@ class Picolev
 				// $current_user_points = Picolev::get_points( $member_id );
 
 				$avatar = bp_core_fetch_avatar( array( 'item_id' => $member_id, 'type' => 'thumb' ) );
-				// log_it( 'avatar', $avatar );
 
 				$photo_link = ( ! empty( $avatar ) ) ? '<a href="' . bp_core_get_user_domain( $member_id ) . '" title="' . bp_core_get_user_displayname( $member_id ) . '">' . $avatar . '</a>' : '';
 
@@ -567,7 +581,6 @@ class Picolev
 	<div class="tab-content">
 		<div class="tab-pane active" id="leaderboard_today">';
 
-		log_it( 'agent details all time', $agent_details );
 		$out .= Picolev::get_leaderboard_table( $agent_details_daily );
 
 		$out .= '</div><div class="tab-pane" id="leaderboard_all_time">';
@@ -617,11 +630,32 @@ class Picolev
 
 	function add_open_graph_tags() {
 		global $wp_query;
+		$open_graph_tags = array();
 
-		echo '<meta property="og:url" content="' . home_url( $wp_query->query['pagename'] . $wp_query->query['page'] ) . '" />';
-		// log_it( 'query',  );
+		if ( bp_is_single_activity() ) {
+			// Get the details for this specific activity
+			$activity_id = trim( $wp_query->query['page'], '/' );
 
-		// <meta property="og:url" content="" />
+			$mission = Picolev::get_mission_for_activity( $activity_id );
+			// $activities = get_posts( array(
+			// 	'numberposts'		=>	1,
+			// 	'page_id'			=> $activity_id,
+			// 	'post_type'			=>	'bp-activity' )
+			// );
+
+			
+
+			$open_graph_tags['og:url'] = '<meta property="og:url" content="' . home_url( $wp_query->query['pagename'] . $wp_query->query['page'] ) . '" />';
+			
+			if ( $mission ) {
+
+				log_it( 'mission' , $mission );
+				$open_graph_tags['og:title'] = '<meta property="og:title" content="' . get_the_author_meta( 'display_name' , $mission->post_author ) . ' is an agent of productivity on Picolev" />';
+				$open_graph_tags['og:description'] = '<meta property="og:description" content="Mission: ' . $mission->post_title . '" />';
+			}
+		}
+		
+		echo implode( "\r\n", apply_filters( 'picolev_open_graph_tags', $open_graph_tags ) );
 	}
 
 	function add_fb_like_button() {
