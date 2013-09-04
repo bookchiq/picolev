@@ -44,7 +44,7 @@ class Picolev
 		add_action( 'init', array( 'Picolev', 'init' ) );
 		add_action( 'wp_enqueue_scripts', array( 'Picolev', 'enqueue_scripts_and_styles' ) );
 		add_action( 'bp_before_directory_activity_content', array( 'Picolev', 'do_picolev_mission_shortcode' ) );
-		add_action( 'bp_activity_entry_meta', array( 'Picolev', 'add_fb_like_button' ) );
+		// add_action( 'bp_activity_entry_meta', array( 'Picolev', 'add_fb_like_button' ) );
 		add_action( 'wp_head', array( 'Picolev', 'add_open_graph_tags' ) );
 
 		add_filter( 'bp_activity_allowed_tags', array( 'Picolev', 'whitelist_tags_in_activity_action' ) );
