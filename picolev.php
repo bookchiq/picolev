@@ -47,12 +47,11 @@ class Picolev
 		// add_action( 'bp_activity_entry_meta', array( 'Picolev', 'add_fb_like_button' ) );
 		add_action( 'wp_head', array( 'Picolev', 'add_open_graph_tags' ) );
 
-		
-
 		add_filter( 'bp_activity_allowed_tags', array( 'Picolev', 'whitelist_tags_in_activity_action' ) );
 		add_filter( 'map_meta_cap', array( 'Picolev', 'map_meta_cap' ), 10, 4 );
 
 		add_shortcode( 'picolev-mission', array( 'Picolev', 'mission_management' ) );
+		add_shortcode( 'picolev-leaderboards', array( 'Picolev', 'display_leaderboards' ) );
 	}
 
 	/**
@@ -174,8 +173,20 @@ class Picolev
 	function enqueue_scripts_and_styles() {
 		$latest_version = date( 'Ymdhis' );
 
+		// Timeago
 		wp_enqueue_script( 'jquery-timeago', plugins_url( 'assets/js/jquery.timeago-ck.js', __FILE__ ), array( 'jquery' ), '1.3.0', true );
-		wp_enqueue_script( 'picolev-scripts', plugins_url( 'assets/js/picolev-ck.js', __FILE__ ), array( 'jquery', 'jquery-timeago' ), $latest_version, true );
+		
+		// Tablesorter
+		wp_enqueue_script( 'jquery-tablesorter', plugins_url( 'assets/js/jquery.tablesorter.min-ck.js', __FILE__ ), array( 'jquery' ), '2.0.5b', true );
+
+		// Icon font
+		wp_enqueue_style( 'picolev-icon', plugins_url( 'assets/icons/css/picolev.css', __FILE__ ) );
+		wp_enqueue_style( 'picolev-icon-animation', plugins_url( 'assets/icons/css/animation.css', __FILE__ ) );
+		echo '<!--[if IE 7]><link rel="stylesheet" href="' . plugins_url( 'assets/icons/css/picolev-ie7.css', __FILE__ ) . '"><![endif]-->';
+
+		// Initialization and custom functions
+		wp_enqueue_script( 'picolev-scripts', plugins_url( 'assets/js/picolev-ck.js', __FILE__ ), array( 'jquery', 'jquery-timeago', 'jquery-tablesorter' ), $latest_version, true );
+		wp_enqueue_style( 'picolev-plugin-styles', plugins_url( 'assets/css/picolev.css', __FILE__ ), false, $latest_version );
 	}
 
 	/**
@@ -290,6 +301,8 @@ class Picolev
 			$beginning_of_today = strtotime( date( 'Y-m-d' ) . ' 00:00:00' );
 			$most_recent_points = get_user_meta( $current_user->ID, 'picolev_points_modified', true );
 			if ( empty( $most_recent_points ) OR ( $most_recent_points < $beginning_of_today ) ) {
+				// Reset the daily point count
+				update_user_meta( $current_user->ID, 'picolev_daily_points', 0 );
 				Picolev::add_points( 5 );
 			}
 
@@ -439,6 +452,7 @@ class Picolev
 
 		$user_id = $current_user->ID;
 		$meta_name = 'picolev_points';
+		$new_daily_points = $points; 
 
 		// Add to existing points, if they're set
 		if ( $current_points = get_user_meta($user_id, $meta_name, true ) ) {
@@ -447,10 +461,154 @@ class Picolev
 
 		update_user_meta( $user_id, $meta_name, $points );
 		update_user_meta( $user_id, 'picolev_points_modified', time() );
+
+		// Update the daily count
+		if ( $current_daily_points = get_user_meta($user_id, 'picolev_daily_points', true ) ) {
+			$new_daily_points += $current_daily_points;
+		}
+		update_user_meta( $current_user->ID, 'picolev_daily_points', $new_daily_points );
 	}
 
 	function get_activity_id_for_mission( $mission_id ) {
 		return get_post_meta( $mission_id, 'activity_id', true );
+	}
+
+	function get_points( $user_id = null ) {
+		if ( empty( $user_id ) ) {
+			global $current_user;
+			$user_id = $current_user->ID;
+		}
+		
+		$current_points = get_user_meta($user_id, 'picolev_points', true );
+
+		return ( ! empty( $current_points ) ) ? $current_points : '0';
+	}
+
+	function get_streak( $user_id = null ) {
+		if ( empty( $user_id ) ) {
+			global $current_user;
+			$user_id = $current_user->ID;
+		}
+
+		$current_streak = get_user_meta( $user_id, 'picolev_streak', true );
+		
+		return ( ! empty( $current_streak ) ) ? $current_streak : '0';
+	}
+
+	function get_daily_points( $user_id = null ) {
+		if ( empty( $user_id ) ) {
+			global $current_user;
+			$user_id = $current_user->ID;
+		}
+
+		// Only a user if they have been active today
+		$beginning_of_today = strtotime( date( 'Y-m-d' ) . ' 00:00:00' );
+		$most_recent_points = get_user_meta( $user_id, 'picolev_points_modified', true );
+		if ( ! empty( $most_recent_points ) && ( $most_recent_points > $beginning_of_today ) ) {
+			$current_daily_points = get_user_meta( $user_id, 'picolev_daily_points', true );
+			return $current_daily_points;
+		} else {
+			return 0;
+		}
+	}
+
+	/**
+	 * Called by shortcode [picolev-leaderboards]
+	 * Output the leaderboards
+	 * 
+	 * @return string The content that will replace the shortcode
+	 */
+	function display_leaderboards() {
+		// Add daily, too
+		
+		$agents_args = array(
+			'meta_key'     => 'picolev_points',
+			'meta_value'   => '0',
+			'meta_compare' => '>',
+			'orderby'      => 'login',
+			'order'        => 'ASC',
+			'fields'       => 'all_with_meta'
+		);
+		$agents = get_users( $agents_args );
+
+		if ( ! empty( $agents ) ) {
+			foreach( $agents as $member_id => $agent ) {
+				// $current_user_points = Picolev::get_points( $member_id );
+
+				$avatar = bp_core_fetch_avatar( array( 'item_id' => $member_id, 'type' => 'thumb' ) );
+				// log_it( 'avatar', $avatar );
+
+				$photo_link = ( ! empty( $avatar ) ) ? '<a href="' . bp_core_get_user_domain( $member_id ) . '" title="' . bp_core_get_user_displayname( $member_id ) . '">' . $avatar . '</a>' : '';
+
+				$agent_details[ $member_id ] = array(
+					'photo' => $photo_link,
+					'link' => '<a href="' . home_url( '/members/' . $agent->data->user_nicename . '/' ) . '">' . $agent->data->display_name . '</a>',
+					'points' => Picolev::get_points( $member_id ),
+					'streak' => Picolev::get_streak( $member_id ),
+				);
+
+				// Get daily points
+				$daily_points = Picolev::get_daily_points( $member_id );
+				if ( ! empty( $daily_points ) ) {
+					$agent_details_daily[ $member_id ] = $agent_details[ $member_id ];
+					$agent_details_daily[ $member_id ][ 'points' ] = $daily_points;
+				}
+			}
+		}
+
+		// Build the "today" content
+		// for ( $agents as $agent )
+
+		$out = '<div id="tab-leaderboard" class="tabbable ">
+	<ul class="nav nav-tabs">
+		<li class="active"><a href="#leaderboard_today" data-toggle="tab">Today</a></li>
+		<li class=""><a href="#leaderboard_all_time" data-toggle="tab">All Time</a></li>
+	</ul>
+	<div class="tab-content">
+		<div class="tab-pane active" id="leaderboard_today">';
+
+		log_it( 'agent details all time', $agent_details );
+		$out .= Picolev::get_leaderboard_table( $agent_details_daily );
+
+		$out .= '</div><div class="tab-pane" id="leaderboard_all_time">';
+	
+		$out .= Picolev::get_leaderboard_table( $agent_details );
+		$out .= '</div></div></div>';
+
+		return $out;
+	}
+
+	function get_leaderboard_table( $agents ) {
+		if ( ! empty( $agents ) ) {
+
+			$out = '
+				<table class="tablesorter sortable">
+					<thead>
+						<tr>
+							<th>&nbsp;</th>
+							<th class="icon">Agent<i></i></th>
+							<th class="icon">Points earned<i></i></th>
+							<th class="icon">Streak<i></i></th>
+						</tr>
+					</thead>
+					<tbody>';	
+
+			foreach( $agents as $agent ) {
+				$out .= '<tr>';
+				$out .= '<td>' . $agent['photo'] . '</td>';
+				$out .= '<td>' . $agent['link'] . '</td>';
+				$out .= '<td>' . $agent['points'] . '</td>';
+				$out .= '<td>' . $agent['streak'] . '</td>';
+				$out .= '</tr>';
+			}
+
+			$out .= '</tbody>
+				</table>';
+
+			return $out;
+		} else {
+			return '<p>No eligible agents yet. Be the first!';
+		}
 	}
 
 	function do_picolev_mission_shortcode() {

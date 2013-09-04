@@ -1,0 +1,5 @@
+
+.icon-star-1:before { content: '\e801'; } /* '' */
+.icon-sort:before { content: '\e800'; } /* '' */
+.icon-sort-down:before { content: '\e802'; } /* '' */
+.icon-sort-up:before { content: '\e803'; } /* '' */

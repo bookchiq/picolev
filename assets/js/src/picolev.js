@@ -28,6 +28,12 @@
 			$( 'body' ).prepend( fbSDK );
 		}
 		
+
+		// Initiate Tablesorter
+		$( 'table.sortable' ).tablesorter({
+			// sort on the first column and third column, order asc 
+			sortList: [[2,1],[3,1],[1,0]]
+		});
 	});
 
 } )( this );
