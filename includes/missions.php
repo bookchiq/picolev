@@ -102,7 +102,7 @@ class PicolevMission {
 				'action' => $current_user->data->display_name . __( ' accepted a mission', 'picolev' ),
 				'content' => '<div class="mission-name">' . __( 'The mission: ', 'picolev' ) . $title . '</div><div class="mission-predicted-finish-time">The deadline: <abbr class="timeago" title="' . date( 'c', $predicted_finish_time ) . '">' . date( 'g:i A T', $predicted_finish_time ) . '</abbr></div>',
 				'component' => 'PicolevMission',
-				'type' => 'PicolevMission_update',
+				'type' => 'picolev_mission_update',
 			) );
 
 			// Connect the activity ID to the mission
@@ -148,9 +148,9 @@ class PicolevMission {
 				$time_to_spare = '<span class="mission-spare-time">' . $time_to_spare . '</span>';
 
 				// Update mission stats
-				$missions_completed_before_deadline = ( $tempvar = get_user_meta( $current_user->ID, 'PicolevMissions_completed_before_deadline', true ) ) ? $tempvar : 0;
+				$missions_completed_before_deadline = ( $tempvar = get_user_meta( $current_user->ID, 'picolev_missions_completed_before_deadline', true ) ) ? $tempvar : 0;
 				$missions_completed_before_deadline++;
-				update_user_meta( $current_user->ID, 'PicolevMissions_completed_before_deadline', $missions_completed_before_deadline );
+				update_user_meta( $current_user->ID, 'picolev_missions_completed_before_deadline', $missions_completed_before_deadline );
 
 				// Add bonus points!
 				if ( ! empty( $current_streak ) ) {
@@ -168,16 +168,16 @@ class PicolevMission {
 				'action' => $current_user->data->display_name . ' accomplished <a href="' . bp_activity_get_permalink( $mission_activity_id ) . '">a mission</a>' . $time_to_spare,
 				'content' => '',
 				'component' => 'PicolevMission',
-				'type' => 'PicolevMission_update_success',
+				'type' => 'picolev_mission_update_success',
 			) );
 
 			PicolevMission::add_points( $points_earned );
 			update_user_meta( $current_user->ID, 'picolev_streak', $current_streak );
 
 			// Update mission stats
-			$missions_completed = ( $tempvar = get_user_meta( $current_user->ID, 'PicolevMissions_completed', true ) ) ? $tempvar : 0;
+			$missions_completed = ( $tempvar = get_user_meta( $current_user->ID, 'picolev_missions_completed', true ) ) ? $tempvar : 0;
 			$missions_completed++;
-			update_user_meta( $current_user->ID, 'PicolevMissions_completed', $missions_completed );
+			update_user_meta( $current_user->ID, 'picolev_missions_completed', $missions_completed );
 
 			header( 'location: ' . esc_url( $_SERVER['REQUEST_URI'] ) );
 		}
@@ -223,9 +223,9 @@ class PicolevMission {
 			update_post_meta( $mission_id, 'completed', -1 );
 		
 			// Update mission stats
-			$missions_aborted = ( $tempvar = get_user_meta( $current_user->ID, 'PicolevMissions_aborted', true ) ) ? $tempvar : 0;
+			$missions_aborted = ( $tempvar = get_user_meta( $current_user->ID, 'picolev_missions_aborted', true ) ) ? $tempvar : 0;
 			$missions_aborted++;
-			update_user_meta( $current_user->ID, 'PicolevMissions_aborted', $missions_aborted );
+			update_user_meta( $current_user->ID, 'picolev_missions_aborted', $missions_aborted );
 
 			// Reset the streak
 			update_user_meta( $current_user->ID, 'picolev_streak', 0 );
@@ -237,7 +237,7 @@ class PicolevMission {
 				'action' => $current_user->data->display_name . ' aborted <a href="' . bp_activity_get_permalink( $mission_activity_id ) . '">a mission</a>',
 				'content' => '',
 				'component' => 'PicolevMission',
-				'type' => 'PicolevMission_update_failure',
+				'type' => 'picolev_mission_update_failure',
 			) );
 		}
 	}
@@ -278,6 +278,9 @@ class PicolevMission {
 			$new_daily_points += $current_daily_points;
 		}
 		update_user_meta( $current_user->ID, 'picolev_daily_points', $new_daily_points );
+
+		// Check for eligible badges and award them
+		PicolevBadges::award_badges();
 	}
 
 	function get_activity_id_for_mission( $mission_id ) {
@@ -435,7 +438,8 @@ class PicolevMission {
 		}
 	}
 
-	function do_PicolevMission_shortcode() {
+	function do_picolev_mission_shortcode() {
 		echo do_shortcode( '[picolev-mission]' );
 	}
 }
+$picolev_mission = new PicolevMission();

@@ -33,11 +33,23 @@ define( 'PICOLEV_VERSION', '0.1.0' );
 define( 'PICOLEV_URL', plugin_dir_url( __FILE__ ) );
 define( 'PICOLEV_PATH', dirname( __FILE__ ) . '/' );
 define( 'PICOLEV_SLUG', 'picolev_mission' );
+define( 'PICOLEV_CMB_PREFIX', '_picolev_' );
+
+// define ( GG2_KNOWLEDGEBASE_PATH, plugin_dir_path( __FILE__ ) );
+// define ( GG2_KNOWLEDGEBASE_INC_URL, plugins_url( 'inc/', __FILE__ ) );
 
 require_once( 'includes/alerts.php' );
 require_once( 'includes/debug.php' );
 require_once( 'includes/badges.php' );
 require_once( 'includes/missions.php' );
+// require_once( 'includes/Custom-Metaboxes-and-Fields-for-WordPress/metaboxes.php' );
+
+// WP Alchemy
+if ( ! class_exists( 'WPAlchemy_MetaBox' ) ) {
+	include_once 'includes/wpalchemy/MetaBox.php';
+}
+include_once 'includes/metaboxes/setup.php';
+include_once 'includes/metaboxes/badges-spec.php';
 
 class Picolev
 {
@@ -47,15 +59,15 @@ class Picolev
 
 		add_action( 'init', array( 'Picolev', 'init' ) );
 		add_action( 'wp_enqueue_scripts', array( 'Picolev', 'enqueue_scripts_and_styles' ) );
-		add_action( 'bp_before_directory_activity_content', array( 'Picolev', 'do_picolev_mission_shortcode' ) );
+		add_action( 'bp_before_directory_activity_content', array( 'PicolevMission', 'do_picolev_mission_shortcode' ) );
 		// add_action( 'bp_activity_entry_meta', array( 'Picolev', 'add_fb_like_button' ) );
 		add_action( 'wp_head', array( 'Picolev', 'add_open_graph_tags' ) );
 
 		add_filter( 'bp_activity_allowed_tags', array( 'Picolev', 'whitelist_tags_in_activity_action' ) );
 		add_filter( 'map_meta_cap', array( 'Picolev', 'map_meta_cap' ), 10, 4 );
 
-		add_shortcode( 'picolev-mission', array( 'Picolev', 'mission_management' ) );
-		add_shortcode( 'picolev-leaderboards', array( 'Picolev', 'display_leaderboards' ) );
+		add_shortcode( 'picolev-mission', array( 'PicolevMission', 'mission_management' ) );
+		add_shortcode( 'picolev-leaderboards', array( 'PicolevMission', 'display_leaderboards' ) );
 	}
 
 	/**
